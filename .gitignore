@@ -1,0 +1,5 @@
+.stack-work/
+stack.yaml.lock
+client_session_key.aes
+watch-together.cabal
+*~
