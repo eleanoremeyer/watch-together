@@ -22,7 +22,9 @@ dependencies:
   - base >= 4.7 && < 5
   - text
   - yesod
-  - monad-control
+  - unliftio
+  - data-default
+  - directory
 
 library:
   source-dirs: src
