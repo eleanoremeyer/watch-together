@@ -23,20 +23,24 @@ socketHandler = do
   -- subscribe to channel
   chan <- liftIO $ atomically $ dupTChan appStateChannel
 
+  -- increase and send socket counter
+  atomically $ modifyTVar' appWebSocketCount (+1)
+  readTVarIO appWebSocketCount >>= (atomically . writeTChan chan . MessageWebsocketCount)
+
   -- send initial value
   withPlaybackTimer appWrappedPlaybackTimer $ \ps -> do
     psValue <- liftIO $ readIORef ps >>= getPlaybackState
     sendJSON psValue
-    logInfoN "Send Playbackstate to new client "
+    logInfoN "Send Playbackstate to new client"
 
   catch
     (race_
       (forever $ atomically (readTChan chan) >>= sendJSON)
       (forever $ receiveData >>= handleUpdateFromClient chan) )
-    connectionError
+    (connectionError chan)
 
   where
-    handleUpdateFromClient :: TChan PlaybackState -> Text -> WebSocketsT Handler ()
+    handleUpdateFromClient :: TChan FrontendMessage -> Text -> WebSocketsT Handler ()
     handleUpdateFromClient chan text = do
         wpt <- appWrappedPlaybackTimer <$> getYesod
         let utf8 = encodeUtf8 text
@@ -50,18 +54,23 @@ socketHandler = do
               else do
                 liftIO $ updateTimer recvPS timer
                 -- share new state with all clients
-                liftIO $ readIORef timer >>= getPlaybackState >>= (atomically . writeTChan chan)
+                liftIO $ readIORef timer >>= getPlaybackState >>= (atomically . writeTChan chan . MessagePlaybackState)
 
           Nothing -> logInfoN $ "received Nothing from: " ++ text
 
 
-    sendJSON :: PlaybackState -> WebSocketsT Handler ()
+    sendJSON :: ToJSON j => j -> WebSocketsT Handler ()
     sendJSON = sendTextData . encode . toJSON
 
-    connectionError :: ConnectionException -> WebSocketsT Handler ()
-    connectionError (ParseException s)   = logErrorN $ "ParseException " ++ T.pack s
-    connectionError (UnicodeException s) = logErrorN $ "UnicodeException " ++ T.pack s
-    connectionError _                    = logInfoN "websocket closed" -- Connection closed
+    connectionError :: TChan FrontendMessage -> ConnectionException -> WebSocketsT Handler ()
+    connectionError chan e = do
+      App {..} <- getYesod
+      atomically $ modifyTVar' appWebSocketCount (\x -> x - 1)
+      readTVarIO appWebSocketCount >>= (atomically . writeTChan chan . MessageWebsocketCount)
+      case e of
+        ParseException s   -> logErrorN $ "ParseException " ++ T.pack s
+        UnicodeException s -> logErrorN $ "UnicodeException " ++ T.pack s
+        _                  -> logInfoN "websocket closed" -- Connection closed
 
 getWatchR :: Handler Html
 getWatchR = do
@@ -71,73 +80,92 @@ getWatchR = do
     [whamlet|
       <video width=320 height=240 id=videoframe controls>
         <source src=@{VideoR} type="video/mp4">
+      <p id=socketcount>
+        ? WebSockets are connected
     |]
     toWidget [julius|
-    //   let videoframe = document.getElementById("videoframe");
+      let videoframe = document.getElementById("videoframe");
+      let socketcountp = document.getElementById("socketcount");
 
-      let state = #{toJSON defPS};
+      let playstate = #{toJSON defPS}.state;
       let url = document.URL.replace("http:", "ws:").replace("https:", "wss:");
       let conn = null;
 
       function onMessage(e) {
-        console.log("Received status update: "+e.data);
-        tmpstate = JSON.parse(e.data);
-        setPlaybackstate(tmpstate.state);
-
-        // reset playback position
-        let deltaTime = Math.abs(videoframe.currentTime * 1000 - tmpstate.pos);
-        console.log("DeltaTime: ");
-        if (tmpstate.state === "play")
-          if (deltaTime > #{show maxDeltaTime}) {
-            setPosition(tmpstate.pos)
-          }
-        // Always set position when paused
-        else {
-          setPosition(tmpstate.pos)
+        let msg = JSON.parse(e.data);
+        if (msg.type === "playbackstate") {
+          onPlaybackStateMessage(msg.data)
+        }
+        else if (msg.type === "socketcount") {
+          onSocketCountMessage(msg.data)
         }
       }
 
+      function onSocketCountMessage(e) {
+        console.log("Received socket count "+e);
+        if (e !== 1) {
+          socketcountp.textContent = e+" WebSockets are connected";
+        } else {
+          socketcountp.textContent = e+" WebSocket is connected";
+        }
+      }
+
+      function onPlaybackStateMessage(newstate) {
+        console.log("Received status update: "+JSON.stringify(newstate));
+
+        // force-reset playback position if delta becomes to large
+        let deltaTime = Math.abs(videoframe.currentTime * 1000 - newstate.pos);
+        console.log("DeltaTime: "+deltaTime);
+        if (newstate.state === "play") {
+          if (deltaTime > #{show maxDeltaTime}) {
+            setPosition(newstate.pos)
+          }
+        }
+
+        // If the server switches state force-synchronise the client
+        if (playstate !== newstate.state) {
+          console.log()
+          if (newstate.state === "pause") {
+            videoframe.pause();
+          } else {
+            videoframe.play();
+          }
+          playstate = newstate.state;
+          setPosition(newstate.pos);
+        }
+      }
+
+      // Metadata needs to be loaded in order to set the playback position
       videoframe.addEventListener('loadedmetadata', function() {
         conn = new WebSocket(url);
 
         conn.onmessage = onMessage;
       }, false);
 
-      function setPlaybackstate(newState) {
-        if (state.state !== newState) {
-          if (newState === "pause") {
-            videoframe.pause();
-          } else {
-            videoframe.play();
-          }
-          state.state = newState;
-          sendState();
-        }
-      }
-
       function setPosition(newPosition) {
-        let inSeconds = newPosition/1000
-        console.log("Setting time to " + inSeconds)
+        let inSeconds = newPosition/1000;
+        console.log("Setting time to " + inSeconds);
         videoframe.currentTime = inSeconds;
-        state.pos = newPosition;
-        console.log(state);
       }
 
       function sendState() {
         let currTime = videoframe.currentTime * 1000;
-        let tempstate = state;
-        tempstate.pos = currTime;
-        console.log("Send state "+JSON.stringify(tempstate));
-        conn.send(JSON.stringify(tempstate));
+        let toSend = {"state":playstate, "pos":currTime};
+        console.log("Send state "+JSON.stringify(toSend));
+        conn.send(JSON.stringify(toSend));
       }
 
       videoframe.onpause = function(e) {
         console.log("Playback paused");
-        setPlaybackstate("pause");
+        playstate = "pause";
+        videoframe.pause();
+        sendState();
       };
 
       videoframe.onplay = function(e) {
-        console.log("Playback started");
-        setPlaybackstate("play");
+        console.log("Playback started", videoframe.currentTime);
+        playstate = "play";
+        videoframe.play();
+        sendState();
       };
     |]

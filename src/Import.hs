@@ -11,7 +11,7 @@ import Prelude as Import hiding (map, concat, lines, readFile, (++))
 import Control.Monad as Import
 import Data.Default as Import
 import Data.IORef as Import (readIORef, writeIORef)
-import UnliftIO.STM as Import (atomically)
+import UnliftIO.STM as Import (atomically, modifyTVar', readTVar,  readTVarIO)
 import Control.Concurrent.STM.TChan as Import (readTChan, dupTChan, TChan, writeTChan)
 import Control.Monad.Logger as Import (logInfoN, logErrorN)
 import UnliftIO.Exception as Import (catch)
