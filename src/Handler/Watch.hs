@@ -83,8 +83,16 @@ getWatchR = do
         console.log("Received status update: "+e.data);
         tmpstate = JSON.parse(e.data);
         setPlaybackstate(tmpstate.state);
+
         // reset playback position
-        if (Math.abs(state.pos - tmpstate.pos) > #{show maxDeltaTime}) {
+        let deltaTime = Math.abs(videoframe.currentTime * 1000 - tmpstate.pos);
+        console.log("DeltaTime: ");
+        if (tmpstate.state === "play")
+          if (deltaTime > #{show maxDeltaTime}) {
+            setPosition(tmpstate.pos)
+          }
+        // Always set position when paused
+        else {
           setPosition(tmpstate.pos)
         }
       }
@@ -111,6 +119,8 @@ getWatchR = do
         let inSeconds = newPosition/1000
         console.log("Setting time to " + inSeconds)
         videoframe.currentTime = inSeconds;
+        state.pos = newPosition;
+        console.log(state);
       }
 
       function sendState() {
