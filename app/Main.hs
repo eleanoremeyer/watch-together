@@ -1,7 +1,8 @@
+{-# LANGUAGE NoImplicitPrelude #-}
 module Main where
 
 import Import
-import Application
+import Application()
 import System.Environment
 import Control.Exception
 import System.Directory

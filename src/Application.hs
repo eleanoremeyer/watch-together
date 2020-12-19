@@ -7,5 +7,6 @@ module Application where
 
 import Import
 import Handler.Watch
+import Handler.Video
 
 mkYesodDispatch "App" resourcesApp

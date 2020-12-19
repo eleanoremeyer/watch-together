@@ -25,6 +25,12 @@ dependencies:
   - unliftio
   - data-default
   - directory
+  - websockets
+  - yesod-websockets
+  - aeson
+  - stm
+  - monad-logger
+  - time
 
 library:
   source-dirs: src

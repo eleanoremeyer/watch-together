@@ -1,43 +1,53 @@
 {-# LANGUAGE TemplateHaskell       #-}
 {-# LANGUAGE MultiParamTypeClasses #-}
 {-# LANGUAGE QuasiQuotes           #-}
+{-# LANGUAGE OverloadedStrings     #-}
 {-# LANGUAGE TypeFamilies          #-}
 
 module Foundation where
 
-import Yesod
-import Data.Text (Text, pack)
-import Control.Monad (forM)
-import Data.List (sort)
+import Datatypes
+
 import Data.IORef
-import UnliftIO.MVar (MVar, withMVar, newMVar)
-import Data.Default
+import Yesod
+import Control.Monad
+import Control.Concurrent
+import Control.Concurrent.STM (writeTChan, TChan, newBroadcastTChan, atomically, dupTChan)
 
--- Int corresponds to the playback position (in ms)
-data PlaybackState = Pause Int
-                   | Play Int
+periodicBroadcastingSeconds :: Int
+periodicBroadcastingSeconds = 5
 
-instance Default PlaybackState where
-  def = Pause 0
-
-
-newtype WrappedPlaybackState = WPS (IORef PlaybackState, MVar ())
 -- Put your config, database connection pool, etc. in here.
 data App = App {
-             appWrappedPlaybackState :: WrappedPlaybackState
-           , appVideoFile :: String
+             appStateChannel :: !(TChan PlaybackState)
+           , appWrappedPlaybackTimer :: !WrappedPlaybackTimer
+           , appVideoFile :: !String
+           , periodicPlaybackStateBroadcasterId :: !ThreadId
            }
+
+
+periodicPlaybackStateBroadcaster :: TChan PlaybackState -> WrappedPlaybackTimer -> IO  ()
+periodicPlaybackStateBroadcaster chan wrappedTimer = forever $ do
+  dupChan <- atomically $ dupTChan chan
+  threadDelay $ 1000 * 1000 * periodicBroadcastingSeconds
+  putStrLn "Hello"
+  withPlaybackTimer wrappedTimer $ \timerRef -> do
+    state <- readIORef timerRef >>= getPlaybackState
+    atomically $ writeTChan dupChan state
 
 createFoundation :: String -> IO App
 createFoundation videoFile = do
-  wps <- WPS <$> ((,) <$> newIORef def <*> newMVar ())
-  pure $ App wps videoFile
+  chan <- atomically newBroadcastTChan
+  wps <- createDefaultWrappedPlaybackState
+  backgroundProcess <- forkIO (periodicPlaybackStateBroadcaster chan wps)
+  pure $ App chan wps videoFile backgroundProcess
 
 
 
 -- Derive routes and instances for App.
 mkYesodData "App" [parseRoutes|
   / WatchR GET
+  /Video VideoR GET
 |]
 
 instance Yesod App -- Methods in here can be overridden as needed.
@@ -47,5 +57,3 @@ instance Yesod App -- Methods in here can be overridden as needed.
 instance RenderMessage App FormMessage where
     renderMessage _ _ = defaultFormMessage
 
-withPlaybackState :: WrappedPlaybackState -> (IORef PlaybackState -> Handler a) -> Handler a
-withPlaybackState (WPS (ps, mvar)) f = withMVar mvar $ \_ -> f ps
