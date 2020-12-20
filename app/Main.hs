@@ -4,6 +4,8 @@ module Main where
 import Import
 import Application()
 import System.Environment
+import System.FilePath
+import Network.Mime
 import Control.Exception
 import System.Directory
 
@@ -22,7 +24,9 @@ main = do
 
     Right (videoFile,port) -> do
       b <- doesFileExist videoFile
-      if b then
-        createFoundation videoFile >>= warp port
+      if b then do
+        let mime = defaultMimeLookup $ pack $ takeFileName videoFile
+        putStrLn $ "Mimetype: " ++ show mime
+        createFoundation videoFile mime >>= warp port
       else
         putStrLn $ "File " ++ videoFile ++ " does not exist"

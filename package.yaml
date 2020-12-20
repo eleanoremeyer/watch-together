@@ -23,6 +23,8 @@ dependencies:
   - base >= 4.7 && < 5
   - data-default
   - directory
+  - filepath
+  - mime-types
   - monad-logger
   - stm
   - text

@@ -15,6 +15,7 @@ import Data.Aeson
 import Data.IORef
 import Yesod
 import Control.Monad
+import Network.Mime (MimeType)
 import Control.Concurrent
 import Control.Concurrent.STM (writeTChan, TChan, newBroadcastTChan, atomically, TVar, newTVar)
 
@@ -30,6 +31,7 @@ data App = App {
            , appWebSocketCount :: !(TVar Int)
            , appWrappedPlaybackTimer :: !WrappedPlaybackTimer
            , appVideoFile :: !String
+           , appVideoFileMime :: MimeType
            , periodicPlaybackStateBroadcasterId :: !ThreadId
            }
 
@@ -41,13 +43,13 @@ periodicPlaybackStateBroadcaster chan wrappedTimer = forever $ do
     state <- readIORef timerRef >>= getPlaybackState
     atomically $ writeTChan chan (MessagePlaybackState state)
 
-createFoundation :: String -> IO App
-createFoundation videoFile = do
+createFoundation :: String -> MimeType -> IO App
+createFoundation videoFile mimeType = do
   chan <- atomically newBroadcastTChan
   socketCount <- atomically $ newTVar 0
   wps <- createDefaultWrappedPlaybackState
   backgroundProcess <- forkIO (periodicPlaybackStateBroadcaster chan wps)
-  pure $ App chan socketCount wps videoFile backgroundProcess
+  pure $ App chan socketCount wps videoFile mimeType backgroundProcess
 
 
 

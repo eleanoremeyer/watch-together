@@ -1,11 +1,12 @@
 {-# LANGUAGE RecordWildCards   #-}
-{-# LANGUAGE OverloadedStrings #-}
 
 module Handler.Video where
 
 import Import
+import Network.Mime (defaultMimeLookup)
+import System.FilePath.Posix
 
 getVideoR :: Handler Html
 getVideoR = do
   App {..} <- getYesod
-  sendFile "video/mp4" appVideoFile
+  sendFile (defaultMimeLookup $ pack $ takeFileName appVideoFile) appVideoFile
