@@ -19,21 +19,24 @@ extra-source-files:
 description:         Please see the README on GitHub at <https://github.com/fmeyer3141/watch-together>
 
 dependencies:
+  - aeson
   - base >= 4.7 && < 5
-  - text
-  - yesod
-  - unliftio
   - data-default
   - directory
-  - websockets
-  - yesod-websockets
-  - aeson
-  - stm
   - monad-logger
+  - stm
+  - text
   - time
+  - unliftio
+  - websockets
+  - yesod
+  - yesod-websockets
 
 library:
   source-dirs: src
+  ghc-options:
+    - -Wall
+    - -O2
 
 executables:
   watch-together-exe:
@@ -41,6 +44,7 @@ executables:
     source-dirs:         app
     ghc-options:
     - -O2
+    - -Wall
     - -threaded
     - -rtsopts
     - -with-rtsopts=-N
