@@ -16,7 +16,7 @@ import Data.IORef
 import Yesod
 import Control.Monad
 import Control.Concurrent
-import Control.Concurrent.STM (writeTChan, TChan, newBroadcastTChan, atomically, dupTChan, TVar, newTVar)
+import Control.Concurrent.STM (writeTChan, TChan, newBroadcastTChan, atomically, TVar, newTVar)
 
 periodicBroadcastingSeconds :: Int
 periodicBroadcastingSeconds = 5
@@ -36,11 +36,10 @@ data App = App {
 
 periodicPlaybackStateBroadcaster :: TChan FrontendMessage -> WrappedPlaybackTimer -> IO  ()
 periodicPlaybackStateBroadcaster chan wrappedTimer = forever $ do
-  dupChan <- atomically $ dupTChan chan
   threadDelay $ 1000 * 1000 * periodicBroadcastingSeconds
   withPlaybackTimer wrappedTimer $ \timerRef -> do
     state <- readIORef timerRef >>= getPlaybackState
-    atomically $ writeTChan dupChan (MessagePlaybackState state)
+    atomically $ writeTChan chan (MessagePlaybackState state)
 
 createFoundation :: String -> IO App
 createFoundation videoFile = do

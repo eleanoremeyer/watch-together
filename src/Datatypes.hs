@@ -83,7 +83,7 @@ setPosition :: Double -> IORef PlaybackTimer -> IO ()
 setPosition t timerRef = do
   currTime <- getCurrentTime
   atomicModifyIORef' timerRef $ \case
-    PlaybackTimerPlay _ startedAt -> (PlaybackTimerPlay t currTime, ())
+    PlaybackTimerPlay _ _ -> (PlaybackTimerPlay t currTime, ())
     PlaybackTimerPause _ -> (PlaybackTimerPause t, ())
 
 updateTimer :: PlaybackState -> IORef PlaybackTimer -> IO ()
