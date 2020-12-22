@@ -7,45 +7,78 @@
 module Handler.Watch where
 
 import Import
+import Data.List as L (delete)
+import Text.Blaze.Html.Renderer.Text
 import Data.Aeson (encode, decodeStrict)
 import Yesod.WebSockets
 import Network.WebSockets (ConnectionException (..))
 import Data.Text as T
+import System.FilePath
 import Data.Text.Encoding (encodeUtf8)
 
--- socketHandler :: WebSocketsT Handler ()
--- socketHandler = do
---   sendTextData ("Hello" :: Text)
+import qualified Data.Text.Lazy as LazyText
+
+fromLazyText :: LazyText.Text -> Text
+fromLazyText = mconcat . LazyText.toChunks
 
 socketHandler :: WebSocketsT Handler ()
 socketHandler = do
   App {..} <- getYesod
+
+  -- receive username from client
+  username <- fromLazyText . renderHtml . toHtml <$> (receiveData :: WebSocketsT Handler Text)
+  logInfoN $ "Client with username " ++ username ++ " connected"
+
+  -- add to connected users and send all connected users
+  -- to the new client
+  atomically $ do
+    writeTChan appStateChannel (MessageChat $ UserJoined username)
+    modifyTVar' appConnectedUsers (username:)
+
+  sendConnectedUsersMessage
+
+  -- duplicate after sending the user joined information
+  -- so that it is not displayed for this user
   -- subscribe to channel
   chan <- liftIO $ atomically $ dupTChan appStateChannel
-
-  -- increase and send socket counter
-  atomically $ modifyTVar' appWebSocketCount (+1)
-  readTVarIO appWebSocketCount >>= (atomically . writeTChan chan . MessageWebsocketCount)
 
   -- send initial value
   withPlaybackTimer appWrappedPlaybackTimer $ \ps -> do
     psValue <- liftIO $ readIORef ps >>= getPlaybackState
     sendJSON psValue
-    logInfoN "Send Playbackstate to new client"
+    logInfoN $ "Send Playbackstate to new client " ++ username
 
   catch
     (race_
       (forever $ atomically (readTChan chan) >>= sendJSON)
-      (forever $ receiveData >>= handleUpdateFromClient chan) )
-    (connectionError chan)
+      (forever $ receiveData >>= handleUpdateFromClient username chan) )
+    (connectionError username chan)
 
   where
-    handleUpdateFromClient :: TChan FrontendMessage -> Text -> WebSocketsT Handler ()
-    handleUpdateFromClient chan text = do
+    sendConnectedUsersMessage :: WebSocketsT Handler ()
+    sendConnectedUsersMessage = do
+      users <- (appConnectedUsers <$> getYesod) >>= readTVarIO
+      let userlist = intercalate ", " $ (\u -> "<b>"++u++"</b>") <$> users
+      sendJSON $ MessageChat $ ServerMessage $ "Connected users: " ++ userlist
+
+    handleUpdateFromClient :: Text -> TChan FrontendMessage -> Text -> WebSocketsT Handler ()
+    handleUpdateFromClient username chan recvText = do
         wpt <- appWrappedPlaybackTimer <$> getYesod
-        let utf8 = encodeUtf8 text
-        case decodeStrict utf8 :: Maybe PlaybackState of
-          Just recvPS -> do
+        let utf8 = encodeUtf8 recvText
+        case decodeStrict utf8 :: Maybe ClientMessage of
+          Just (ClientChat text) -> do
+            logInfoN $ "Received Chat Message from " ++ username
+            case text of
+              "/list" -> sendConnectedUsersMessage
+
+              "/help" ->
+                let msg = "Possible Commands: list help" in
+                sendJSON $ MessageChat $ ServerMessage msg
+
+              _ ->
+                atomically $ writeTChan chan (MessageChat $ ChatMessage username text)
+
+          Just (ClientPlaybackState recvPS) -> do
             logInfoN $ "received " ++ T.pack (show recvPS)
             withPlaybackTimer wpt $ \timer -> do
               servPlaybackState <- liftIO $ readIORef timer >>= getPlaybackState
@@ -56,17 +89,18 @@ socketHandler = do
                 -- share new state with all clients
                 liftIO $ readIORef timer >>= getPlaybackState >>= (atomically . writeTChan chan . MessagePlaybackState)
 
-          Nothing -> logInfoN $ "received Nothing from: " ++ text
+          Nothing -> logInfoN $ "received Nothing from: " ++ recvText
 
 
     sendJSON :: ToJSON j => j -> WebSocketsT Handler ()
     sendJSON = sendTextData . encode . toJSON
 
-    connectionError :: TChan FrontendMessage -> ConnectionException -> WebSocketsT Handler ()
-    connectionError chan e = do
+    connectionError :: Text -> TChan FrontendMessage -> ConnectionException -> WebSocketsT Handler ()
+    connectionError user chan e = do
       App {..} <- getYesod
-      atomically $ modifyTVar' appWebSocketCount (\x -> x - 1)
-      readTVarIO appWebSocketCount >>= (atomically . writeTChan chan . MessageWebsocketCount)
+      atomically $ do
+        writeTChan chan (MessageChat $ UserLeft user)
+        modifyTVar' appConnectedUsers (L.delete user)
       case e of
         ParseException s   -> logErrorN $ "ParseException " ++ T.pack s
         UnicodeException s -> logErrorN $ "UnicodeException " ++ T.pack s
@@ -75,38 +109,82 @@ socketHandler = do
 getWatchR :: Handler Html
 getWatchR = do
   webSockets socketHandler
+  videoName <- takeBaseName . appVideoFile <$> getYesod
   let defPS = def :: PlaybackState
   defaultLayout $ do
+    setTitle $ toHtml videoName
     [whamlet|
-      <video width=320 height=240 id=videoframe controls>
-        <source src=@{VideoR} type="video/mp4">
-      <p id=socketcount>
-        ? WebSockets are connected
+      <div #usernamediv hidden>
+        <label for=usernameinp>
+          Username:
+        <input #usernameinp>
+        <button #usernamebutton>
+          Ok
+      <div #maindiv hidden>
+        <video .column #videoframe controls style="width:60%;float:left;">
+          <source src=@{VideoR} type="video/mp4">
+        <div #chatcontainer .column style="float:right; width:35%; margin-left: 2.5%; margin-right: 2.5%; height: 70%; max-height: 70%; overflow:auto;">
+          <div #chatwindow>
+          <input #chatinp>
+          <button #chatbutton>
+            Send
     |]
     toWidget [julius|
+      let username = "noname";
+      let usernamefield = document.getElementById("usernameinp");
+      let usernamebutton = document.getElementById("usernamebutton");
+      let usernamediv = document.getElementById("usernamediv");
+
+      let maindiv = document.getElementById("maindiv");
       let videoframe = document.getElementById("videoframe");
-      let socketcountp = document.getElementById("socketcount");
+
+      let chatwindow = document.getElementById("chatwindow");
+      let chatbutton = document.getElementById("chatbutton");
+      let chatfield = document.getElementById("chatinp");
 
       let playstate = #{toJSON defPS}.state;
       let url = document.URL.replace("http:", "ws:").replace("https:", "wss:");
       let conn = null;
 
+      usernamefield.addEventListener("keyup", function(event) {
+        if (event.keyCode === 13) { // Enter pressed
+          usernamebutton.click();
+        }
+      });
+      chatfield.addEventListener("keyup", function(event) {
+        if (event.keyCode === 13) { // Enter pressed
+          chatbutton.click();
+        }
+      });
+
       function onMessage(e) {
         let msg = JSON.parse(e.data);
         if (msg.type === "playbackstate") {
           onPlaybackStateMessage(msg.data)
-        }
-        else if (msg.type === "socketcount") {
-          onSocketCountMessage(msg.data)
+        } else if (msg.type === "chatentry") {
+          onChatEntryMessage(msg.data);
         }
       }
 
-      function onSocketCountMessage(e) {
-        console.log("Received socket count "+e);
-        if (e !== 1) {
-          socketcountp.textContent = e+" WebSockets are connected";
-        } else {
-          socketcountp.textContent = e+" WebSocket is connected";
+      function addToChatWindow(html) {
+        let p = document.createElement("p");
+        p.innerHTML = html;
+        chatwindow.appendChild(p);
+      }
+
+      function onChatEntryMessage(msg) {
+        console.log("Chat: "+JSON.stringify(msg));
+        if (msg.type === "userjoined") {
+          addToChatWindow("User <b>"+msg.user+"</b> joined!");
+        } else if (msg.type === "userleft") {
+          addToChatWindow("User <b>"+msg.user+"</b> left!");
+        } else if (msg.type === "message") {
+          // prepend time
+          let currentDate = new Date();
+          let timestamp = currentDate.getHours() + ":" + currentDate.getMinutes();
+          addToChatWindow("[<i>"+timestamp+"</i>]" + " <b>"+msg.from+"</b>: "+msg.text);
+        } else if (msg.type === "servermessage") {
+          addToChatWindow(msg.msg);
         }
       }
 
@@ -137,10 +215,32 @@ getWatchR = do
 
       // Metadata needs to be loaded in order to set the playback position
       videoframe.addEventListener('loadedmetadata', function() {
-        conn = new WebSocket(url);
-
-        conn.onmessage = onMessage;
+        usernamediv.style.display = "block";
       }, false);
+
+      usernamebutton.onclick = function() {
+        username = usernamefield.value;
+        document.body.removeChild(usernamediv);
+        console.log("Starting WebSocket. Username: "+username)
+
+        conn = new WebSocket(url);
+        conn.onmessage = onMessage;
+        conn.onopen = onSocketOpen;
+      };
+
+      chatbutton.onclick = function () {
+        let text = chatfield.value;
+        let toSend = JSON.stringify({"type":"chat","text":text});
+        console.log("Send chat message"+toSend);
+        conn.send(toSend);
+        chatfield.value = "";
+      }
+
+      function onSocketOpen() {
+        conn.send(username);
+
+        maindiv.style.display = "flex";
+      }
 
       function setPosition(newPosition) {
         let inSeconds = newPosition/1000;
@@ -150,7 +250,7 @@ getWatchR = do
 
       function sendState() {
         let currTime = videoframe.currentTime * 1000;
-        let toSend = {"state":playstate, "pos":currTime};
+        let toSend = {"type":"playbackstate", "state":{"state":playstate, "pos":currTime}};
         console.log("Send state "+JSON.stringify(toSend));
         conn.send(JSON.stringify(toSend));
       }
