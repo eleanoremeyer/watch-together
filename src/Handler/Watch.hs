@@ -121,13 +121,43 @@ getWatchR = do
         <button #usernamebutton>
           Ok
       <div #maindiv hidden>
-        <video .column #videoframe controls style="width:60%;float:left;">
-          <source src=@{VideoR} type="video/mp4">
-        <div #chatcontainer .column style="float:right; width:35%; margin-left: 2.5%; margin-right: 2.5%; height: 70%; max-height: 70%; overflow:auto;">
+        <div #contentdiv>
+          <h1>
+            #{videoName}
+          <video #videoframe controls>
+            <source src=@{VideoR} type="video/mp4">
+        <div #chatcontainer>
           <div #chatwindow>
           <input #chatinp>
           <button #chatbutton>
             Send
+    |]
+    toWidget [lucius|
+      #chatcontainer {
+        height: 100vh;
+      }
+      #chatwindow {
+        display: flex;
+        flex-direction: column-reverse;
+        height: 70%;
+        max-height: 70%;
+        overflow-y: auto;
+      }
+      #videoframe {
+        width: 100%;
+        max-width: 100%;
+      }
+      #maindiv {
+        height: 100vh;
+        width: 100%;
+        grid-gap: 2.5%;
+        padding-right: 2.5%;
+        grid-template-columns: 65% 30%;
+      }
+      p {
+        margin-top: 0.25em;
+        margin-bottom: 0.25em;
+      }
     |]
     toWidget [julius|
       let username = "noname";
@@ -169,7 +199,8 @@ getWatchR = do
       function addToChatWindow(html) {
         let p = document.createElement("p");
         p.innerHTML = html;
-        chatwindow.appendChild(p);
+        // the chatwindow "scroll" direction is reversed
+        chatwindow.prepend(p);
       }
 
       function onChatEntryMessage(msg) {
@@ -181,10 +212,20 @@ getWatchR = do
         } else if (msg.type === "message") {
           // prepend time
           let currentDate = new Date();
-          let timestamp = currentDate.getHours() + ":" + currentDate.getMinutes();
+          let hours = currentDate.getHours();
+          let minutes = currentDate.getMinutes();
+
+          if (minutes < 10) {
+            minutes = "0"+minutes;
+          }
+          if (hours < 10) {
+            hours = "0"+hours;
+          }
+          let timestamp = hours + ":" + minutes;
+
           addToChatWindow("[<i>"+timestamp+"</i>]" + " <b>"+msg.from+"</b>: "+msg.text);
         } else if (msg.type === "servermessage") {
-          addToChatWindow(msg.msg);
+          addToChatWindow("<i>"+msg.msg+"</i>");
         }
       }
 
@@ -239,7 +280,7 @@ getWatchR = do
       function onSocketOpen() {
         conn.send(username);
 
-        maindiv.style.display = "flex";
+        maindiv.style.display = "grid";
       }
 
       function setPosition(newPosition) {
