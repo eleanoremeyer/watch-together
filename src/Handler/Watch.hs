@@ -112,7 +112,7 @@ getWatchR = do
   videoName <- takeBaseName . appVideoFile <$> getYesod
   let defPS = def :: PlaybackState
   defaultLayout $ do
-    setTitle $ toHtml videoName
+    setTitle $ toHtml $ "Watch Together - " ++ videoName
     [whamlet|
       <div #usernamediv hidden>
         <label for=usernameinp>
