@@ -72,7 +72,11 @@ mkYesodData "App" [parseRoutes|
 |]
 
 instance Yesod App where -- Methods in here can be overridden as needed.
-  approot = ApprootRelative
+  -- If https is not recognized check if the header
+  -- X-Forwarded-Proto is set to https
+  -- or any other Header that is checked by Network.Wai.Request.appearsSecure
+  -- Otherwise if this still causes problems
+  -- approot = ApprootRelative
 
 -- Tells our application to use the standard English messages.
 -- If you want i18n, then you can supply a translating function instead.
