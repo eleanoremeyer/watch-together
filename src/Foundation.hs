@@ -71,7 +71,8 @@ mkYesodData "App" [parseRoutes|
   /Video VideoR GET
 |]
 
-instance Yesod App -- Methods in here can be overridden as needed.
+instance Yesod App where -- Methods in here can be overridden as needed.
+  approot = ApprootRelative
 
 -- Tells our application to use the standard English messages.
 -- If you want i18n, then you can supply a translating function instead.
