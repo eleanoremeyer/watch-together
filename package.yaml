@@ -22,11 +22,13 @@ dependencies:
   - aeson
   - base >= 4.7 && < 5
   - blaze-html
+  - blaze-markup
   - data-default
   - directory
   - filepath
   - mime-types
   - monad-logger
+  - pandoc
   - stm
   - text
   - time

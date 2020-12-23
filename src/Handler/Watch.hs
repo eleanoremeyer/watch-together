@@ -7,6 +7,9 @@
 module Handler.Watch where
 
 import Import
+import Text.Blaze.Html5
+import Text.Pandoc -- for Markdown processing
+import Text.Pandoc.Highlighting
 import Data.List as L (delete)
 import Text.Blaze.Html.Renderer.Text
 import Data.Aeson (encode, decodeStrict)
@@ -20,6 +23,17 @@ import qualified Data.Text.Lazy as LazyText
 
 fromLazyText :: LazyText.Text -> Text
 fromLazyText = mconcat . LazyText.toChunks
+
+processMarkdown :: Text -> WebSocketsT Handler Html
+processMarkdown raw = case result of
+    Left e -> do
+      logErrorN $ "Mardown parse error: " ++ pack (show e)
+      pure $ p $ toHtml raw
+    Right formatted -> pure formatted
+  where
+    result = runPure $ readMarkdown def {readerExtensions = pandocExtensions} raw
+      >>= writeHtml5 def { writerReferenceLinks = True
+                         , writerExtensions = pandocExtensions }
 
 socketHandler :: WebSocketsT Handler ()
 socketHandler = do
@@ -76,7 +90,7 @@ socketHandler = do
                 sendJSON $ MessageChat $ ServerMessage msg
 
               _ ->
-                atomically $ writeTChan chan (MessageChat $ ChatMessage username text)
+                processMarkdown text >>= atomically . writeTChan chan . MessageChat . ChatMessage username
 
           Just (ClientPlaybackState recvPS) -> do
             logInfoN $ "received " ++ T.pack (show recvPS)
@@ -128,7 +142,7 @@ getWatchR = do
             <source src=@{VideoR} type="video/mp4">
         <div #chatcontainer>
           <div #chatwindow>
-          <input #chatinp>
+          <textarea #chatinp>
           <button #chatbutton>
             Send
     |]
@@ -162,7 +176,7 @@ getWatchR = do
         background-color: rgba(40,42,54);
         color: #a9b7c6;
       }
-      input, button {
+      input, button, textarea {
         background: rgba(68, 71, 90);
         color: #a9b7c6;
         border-color: rgba(0,0,0,0);
@@ -191,7 +205,7 @@ getWatchR = do
         }
       });
       chatfield.addEventListener("keyup", function(event) {
-        if (event.keyCode === 13) { // Enter pressed
+        if (event.keyCode === 13 && !event.shiftKey) { // Enter pressed
           chatbutton.click();
         }
       });

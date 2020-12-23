@@ -11,6 +11,7 @@ module Foundation where
 import Datatypes
 
 import Data.Aeson.Types
+import Text.Blaze.Html.Renderer.Text (renderHtml)
 import Data.Text
 import GHC.Generics
 import Data.IORef
@@ -28,10 +29,10 @@ type Username = Text
 data ChatEntry = UserJoined Text
                | UserLeft Text
                | ServerMessage Text
-               | ChatMessage Username Text deriving (Generic, Show)
+               | ChatMessage Username Html deriving Generic
 
 data FrontendMessage = MessagePlaybackState PlaybackState
-                     | MessageChat ChatEntry  deriving (Generic, Show)
+                     | MessageChat ChatEntry  deriving Generic
 
 data ClientMessage = ClientChat Text
                    | ClientPlaybackState PlaybackState deriving (Generic, Show)
@@ -80,8 +81,8 @@ instance RenderMessage App FormMessage where
 instance ToJSON ChatEntry where
   toJSON (UserLeft user)           = object [ "type" .= ("userleft" :: Text), "user" .= user]
   toJSON (UserJoined user)         = object [ "type" .= ("userjoined" :: Text), "user" .= user]
-  toJSON (ChatMessage sender text) = object [ "type" .= ("message" :: Text), "from" .= sender, "text" .= text]
-  toJSON (ServerMessage msg)    = object [ "type" .= ("servermessage" :: Text), "msg".=msg]
+  toJSON (ChatMessage sender text) = object [ "type" .= ("message" :: Text), "from" .= sender, "text" .= renderHtml text]
+  toJSON (ServerMessage msg)       = object [ "type" .= ("servermessage" :: Text), "msg".=msg]
 
 instance ToJSON FrontendMessage where
   toJSON (MessagePlaybackState state) = object [ "type" .= ("playbackstate" :: Text), "data" .= state]
