@@ -7,9 +7,8 @@
 module Handler.Watch where
 
 import Import
-import Text.Blaze.Html5
+import Text.Blaze.Html5 (p)
 import Text.Pandoc -- for Markdown processing
-import Text.Pandoc.Highlighting
 import Data.List as L (delete)
 import Text.Blaze.Html.Renderer.Text
 import Data.Aeson (encode, decodeStrict)
@@ -80,9 +79,9 @@ socketHandler = do
         wpt <- appWrappedPlaybackTimer <$> getYesod
         let utf8 = encodeUtf8 recvText
         case decodeStrict utf8 :: Maybe ClientMessage of
-          Just (ClientChat text) -> do
+          Just (ClientChat txt) -> do
             logInfoN $ "Received Chat Message from " ++ username
-            case text of
+            case txt of
               "/list" -> sendConnectedUsersMessage
 
               "/help" ->
@@ -90,7 +89,7 @@ socketHandler = do
                 sendJSON $ MessageChat $ ServerMessage msg
 
               _ ->
-                processMarkdown text >>= atomically . writeTChan chan . MessageChat . ChatMessage username
+                processMarkdown txt >>= atomically . writeTChan chan . MessageChat . ChatMessage username
 
           Just (ClientPlaybackState recvPS) -> do
             logInfoN $ "received " ++ T.pack (show recvPS)
