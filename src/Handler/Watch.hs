@@ -158,6 +158,15 @@ getWatchR = do
         margin-top: 0.25em;
         margin-bottom: 0.25em;
       }
+      body {
+        background-color: rgba(40,42,54);
+        color: #a9b7c6;
+      }
+      input, button {
+        background: rgba(68, 71, 90);
+        color: #a9b7c6;
+        border-color: rgba(0,0,0,0);
+      }
     |]
     toWidget [julius|
       let username = "noname";
