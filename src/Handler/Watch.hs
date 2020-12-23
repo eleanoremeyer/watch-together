@@ -81,7 +81,7 @@ socketHandler = do
         case decodeStrict utf8 :: Maybe ClientMessage of
           Just (ClientChat txt) -> do
             logInfoN $ "Received Chat Message from " ++ username
-            case txt of
+            case unpack txt of
               "/list" -> sendConnectedUsersMessage
 
               "/help" ->
