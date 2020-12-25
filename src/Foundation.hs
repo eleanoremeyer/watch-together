@@ -20,6 +20,7 @@ import Control.Monad
 import Network.Mime (MimeType)
 import Control.Concurrent
 import Control.Concurrent.STM (writeTChan, TChan, newBroadcastTChan, atomically, TVar, newTVar)
+import Data.Time.Clock (UTCTime, getCurrentTime)
 
 periodicBroadcastingSeconds :: Int
 periodicBroadcastingSeconds = 5
@@ -40,6 +41,7 @@ data ClientMessage = ClientChat Text
 -- Put your config, database connection pool, etc. in here.
 data App = App {
              appStateChannel :: !(TChan FrontendMessage)
+           , appTimeLastIssuedCommand :: !(TVar UTCTime)
            , appConnectedUsers :: !(TVar [Username])
            , appWrappedPlaybackTimer :: !WrappedPlaybackTimer
            , appVideoFile :: !String
@@ -59,9 +61,10 @@ createFoundation :: String -> MimeType -> IO App
 createFoundation videoFile mimeType = do
   chan <- atomically newBroadcastTChan
   connectedUsers <- atomically $ newTVar []
+  lastIssuedCommand <- liftIO getCurrentTime >>= (atomically . newTVar)
   wps <- createDefaultWrappedPlaybackState
   backgroundProcess <- forkIO (periodicPlaybackStateBroadcaster chan wps)
-  pure $ App chan connectedUsers wps videoFile mimeType backgroundProcess
+  pure $ App chan lastIssuedCommand connectedUsers wps videoFile mimeType backgroundProcess
 
 
 

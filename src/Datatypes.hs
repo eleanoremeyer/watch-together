@@ -10,6 +10,7 @@ module Datatypes
   , getPlaybackState
   , playbackStatesConsistent
   , updateTimer
+  , setPosition
   , maxDeltaTime)
   where
 
@@ -79,18 +80,23 @@ startPlayback timerRef = readIORef timerRef >>= \case
     currTime <- getCurrentTime
     writeIORef timerRef $ PlaybackTimerPlay t currTime
 
-setPosition :: Double -> IORef PlaybackTimer -> IO ()
-setPosition t timerRef = do
+setMilliseconds :: Double -> IORef PlaybackTimer -> IO ()
+setMilliseconds t timerRef = do
   currTime <- getCurrentTime
   atomicModifyIORef' timerRef $ \case
     PlaybackTimerPlay _ _ -> (PlaybackTimerPlay t currTime, ())
     PlaybackTimerPause _ -> (PlaybackTimerPause t, ())
 
-updateTimer :: PlaybackState -> IORef PlaybackTimer -> IO ()
-updateTimer state timerRef = case state of
-  Pause t -> pausePlayback timerRef >> setPosition t timerRef
-  Play t -> startPlayback timerRef >> setPosition t timerRef
+setPosition :: PlaybackState -> IORef PlaybackTimer -> IO ()
+setPosition (Pause t) timerRef = setMilliseconds t timerRef
+setPosition (Play t) timerRef = setMilliseconds t timerRef
 
+setPlayback :: PlaybackState -> IORef PlaybackTimer -> IO ()
+setPlayback (Pause _) timerRef = pausePlayback timerRef
+setPlayback (Play _)  timerRef = startPlayback timerRef
+
+updateTimer :: PlaybackState -> IORef PlaybackTimer -> IO ()
+updateTimer state timerRef = setPlayback state timerRef >> setPosition state timerRef
 
 
 instance ToJSON PlaybackState where

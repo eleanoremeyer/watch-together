@@ -8,7 +8,7 @@ module Handler.Watch where
 
 import Import
 import Text.Blaze.Html5 (p)
-import Text.Pandoc -- for Markdown processing
+import Text.Pandoc hiding (getCurrentTime) -- for Markdown processing
 import Data.List as L (delete)
 import Text.Blaze.Html.Renderer.Text
 import Data.Aeson (encode, decodeStrict)
@@ -17,6 +17,7 @@ import Network.WebSockets (ConnectionException (..))
 import Data.Text as T
 import System.FilePath
 import Data.Text.Encoding (encodeUtf8)
+import Data.Time.Clock
 
 import qualified Data.Text.Lazy as LazyText
 
@@ -76,7 +77,7 @@ socketHandler = do
 
     handleUpdateFromClient :: Text -> TChan FrontendMessage -> Text -> WebSocketsT Handler ()
     handleUpdateFromClient username chan recvText = do
-        wpt <- appWrappedPlaybackTimer <$> getYesod
+        App {..} <- getYesod
         let utf8 = encodeUtf8 recvText
         case decodeStrict utf8 :: Maybe ClientMessage of
           Just (ClientChat txt) -> do
@@ -93,12 +94,21 @@ socketHandler = do
 
           Just (ClientPlaybackState recvPS) -> do
             logInfoN $ "received " ++ T.pack (show recvPS)
-            withPlaybackTimer wpt $ \timer -> do
+            withPlaybackTimer appWrappedPlaybackTimer $ \timer -> do
               servPlaybackState <- liftIO $ readIORef timer >>= getPlaybackState
               if playbackStatesConsistent servPlaybackState recvPS then
                 pure ()
               else do
-                liftIO $ updateTimer recvPS timer
+                -- only update play/pause if some time has passed since the last change
+                currTime <- liftIO getCurrentTime
+                lastUpdate <- readTVarIO appTimeLastIssuedCommand
+                if realToFrac (diffUTCTime currTime lastUpdate) < (1 :: Double) then
+                  liftIO $ setPosition recvPS timer
+                else do
+                  logInfoN "Last command to recent, only setting timer"
+                  liftIO $ updateTimer recvPS timer
+
+                atomically $ writeTVar appTimeLastIssuedCommand currTime
                 -- share new state with all clients
                 liftIO $ readIORef timer >>= getPlaybackState >>= (atomically . writeTChan chan . MessagePlaybackState)
 
@@ -321,14 +331,14 @@ getWatchR = do
       videoframe.onpause = function(e) {
         console.log("Playback paused");
         playstate = "pause";
-        videoframe.pause();
+        // videoframe.pause();
         sendState();
       };
 
       videoframe.onplay = function(e) {
         console.log("Playback started", videoframe.currentTime);
         playstate = "play";
-        videoframe.play();
+        // videoframe.play();
         sendState();
       };
     |]
