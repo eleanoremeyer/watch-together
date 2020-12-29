@@ -147,7 +147,7 @@ getWatchR = do
         <div #contentdiv>
           <h1>
             #{videoName}
-          <video #videoframe controls>
+          <video #videoframe controls preload=auto>
             <source src=@{VideoR} type="video/mp4">
         <div #chatcontainer>
           <div #chatwindow>
