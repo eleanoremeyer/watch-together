@@ -44,7 +44,7 @@ library:
     - -O2
 
 executables:
-  watch-together-exe:
+  watch-together:
     main:                Main.hs
     source-dirs:         app
     ghc-options:

@@ -14,7 +14,10 @@ In order to compile this project you need [stack](http://haskellstack.org).
 Once the project has successfully been compiled run:
 
 ```bash
-  stack exec -- watch-together-exe /path/to/video/file 3000
+  stack exec -- watch-together /path/to/video/file 3000
 ```
 
 This will start a webserver on port 3000.
+
+Furthermore you can install the resulting binary using `stack install watch-together`, which should copy the
+binary to `$HOME/.local/bin`.
