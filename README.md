@@ -19,5 +19,5 @@ Once the project has successfully been compiled run:
 
 This will start a webserver on port 3000.
 
-Furthermore you can install the resulting binary using `stack install watch-together`, which should copy the
-binary to `$HOME/.local/bin`.
+Furthermore you can install the resulting binary using `stack install`, which should copy the
+binary to `$HOME/.local/bin`, so make sure it is contained in `$PATH`.
